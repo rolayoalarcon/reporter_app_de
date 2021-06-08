@@ -1,0 +1,6 @@
+"0","# This should be an ouput already"
+"0","x <- joint_de.cds %>% "
+"0","  mutate(pattern_str = paste(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic, sep="","")) %>% "
+"0","  select(gene_name, `# feature`, symbol, pattern_str) %>% "
+"0","  left_join(patter.db, by=""pattern_str"") %>% "
+"0","  select(gene_name, pattern_str, pattern_id, patid_ngenes, n_genes)"

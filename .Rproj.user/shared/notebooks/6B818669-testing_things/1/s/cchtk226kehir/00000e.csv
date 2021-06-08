@@ -1,0 +1,3 @@
+"0","salm.pre <- subset(salm.data, pre.selected == ""Yes"")"
+"0","camp.pre <- subset(camp.data, pre.selected == ""Yes"")"
+"0","camp.clo <- subset(camp.pre, campy.clone ==""Yes"")"

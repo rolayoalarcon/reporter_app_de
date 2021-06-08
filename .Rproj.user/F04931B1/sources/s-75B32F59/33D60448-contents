@@ -1,0 +1,103 @@
+---
+title: "determining_diffexpression"
+author: "Roberto Olayo"
+date: "6/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(DESeq2)
+```
+
+First, we read in the data and then we filter out lowly expressed genes
+
+```{r import_data}
+clean_colname <- function(cname){
+  remove_pre <- gsub("P13116_1005_S5_L001_R1_001_SALMT_", "", cname)
+  remove_pos <- gsub(".sorted.bam", "", remove_pre)
+  
+  return(remove_pos)
+}
+
+
+raw_counts <- read.table('../data/counts/raw_counts.tsv', sep='\t', row.names = 1)
+colnames(raw_counts) <- sapply(colnames(raw_counts), clean_colname)
+
+keep <- rowSums(raw_counts) >= 10
+raw_counts_filt <- raw_counts[keep,]
+```
+
+
+So here we have the metadata that will be used to create the design equation.  
+Here it is important to set "Ctrl" as the reference.
+```{r create_metadata}
+col_info <- data.frame(row.names=colnames(raw_counts_filt),
+                       condition = sapply(colnames(raw_counts_filt), function(x){strsplit(x, "_")[[1]][1]}),
+                       replicate = sapply(colnames(raw_counts_filt), function(x){strsplit(x, "_")[[1]][2]})) %>% 
+  mutate(condition = factor(condition, levels = c("Ctrl", "As", "Bs", "Hyp", "Li", "Nd", "Ns", "Oss", "Oxs", "Sp", "Tm", "Vic")))
+col_info
+``` 
+  
+Now we create the summarized experiment object. I think we can limit our design to $y \sim Condition$. This can be further supported by the PCA images from normalization
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = raw_counts_filt,
+                              colData = col_info,
+                              design = ~ condition)
+
+dds <- DESeq(dds)
+```
+
+Now let's gather the results.
+
+```{r}
+resultsNames(dds)
+```
+  
+Let's look at Acid Stress as an example
+```{r}
+res.as <- results(dds, name="condition_Hyp_vs_Ctrl", alpha = 0.05)
+plotMA(res.as)
+
+res.treatment.apeglm <- lfcShrink(dds, coef="condition_Hyp_vs_Ctrl", type = "apeglm")
+plotMA(res.treatment.apeglm)
+
+
+as.data.frame(res.treatment.apeglm)
+```
+
+```{r}
+gather_results <- function(comparison, dds_obj=dds, alpha=0.05){
+  res.init <- as.data.frame(results(dds_obj, name = comparison, alpha=alpha)) %>% 
+    rownames_to_column("gene_name") %>% 
+    select(gene_name, log2FoldChange, pvalue, padj)
+  
+  res.shrink <- as.data.frame(lfcShrink(dds_obj, coef=comparison, type="apeglm")) %>% 
+    rownames_to_column("gene_name") %>% 
+    select(log2FoldChange, gene_name)
+  colnames(res.shrink) <- c("log2FC.shrink", "gene_name")
+  
+  
+  res.combined <- res.init %>% 
+    left_join(res.shrink, by="gene_name") %>% 
+    mutate(condition=strsplit(comparison, "_")[[1]][2],
+           de_vector = case_when(padj < alpha & log2FoldChange > 0 ~ 1,
+                                   padj < alpha & log2FoldChange < 0 ~ -1,
+                                   TRUE ~ 0)) %>% 
+    select(gene_name, log2FoldChange, log2FC.shrink, 
+           pvalue, padj, de_vector, condition)
+  
+  
+  return(res.combined)
+}
+
+
+de_results <- bind_rows(lapply(resultsNames(dds)[2:length(resultsNames(dds))], gather_results))
+de_results
+```
+
+```{r}
+write_tsv(de_results, "../data/counts/de_results.tsv")
+```
+

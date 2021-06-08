@@ -1,0 +1,305 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(readxl)
+```
+
+
+# Read in the data
+
+```{r}
+campy_de <- read_tsv("data/de_results_campylobacter.tsv") %>% 
+  rename(locus_tag = gene_name) %>% 
+  mutate(gene_name = paste0(locus_tag, "-Campylobacter"))
+
+salmo_de <- read_tsv("data/de_results_salmonella.tsv") %>% 
+  rename(locus_tag = gene_name) %>% 
+  mutate(gene_name = paste0(locus_tag, "-Salmonella"))
+
+```
+
+```{r}
+salm_features <- read_tsv("data/merged_features_salmonella.tsv") %>% 
+  mutate(organism="Salmonella",
+         gene_name=paste0(locus_tag, "-Salmonella")) %>% 
+  select(gene_name, `# feature`, symbol)
+
+camp_features <- read_tsv("data/merged_features_campylobacter.tsv") %>% 
+  mutate(organism="Campylobacter",
+         gene_name=paste0(locus_tag, "-Campylobacter")) %>% 
+  select(gene_name, `# feature`, symbol)
+
+genomic_features <- bind_rows(camp_features, salm_features)
+genomic_features
+```
+
+```{r}
+salm.preselection <- read_tsv("data/pre_selected_salmonella.txt") %>% 
+  rename("symbol"=ID) %>% 
+  left_join(genomic_features, by="symbol") %>% 
+  select(gene_name)
+
+camp.preselection <- read_excel("data/Campy regulators and stress resp for Roberto.xlsx") %>% 
+  rename("locus_tag" = `Locus tag 81-176`,
+         clone=`clone?`) %>%
+  mutate("gene_name" = paste0(locus_tag, "-Campylobacter"),
+         clone=if_else(is.na(clone), "No", "Yes"))
+
+all_preselected <- c(salm.preselection$gene_name, camp.preselection$gene_name)
+campy.clone <-  subset(camp.preselection, clone=="Yes")$gene_name
+
+
+genomic_features <- genomic_features %>% 
+  mutate("pre.selected" = if_else(gene_name %in% all_preselected, "Yes", "-"),
+         "campy.clone" = if_else(gene_name %in% campy.clone, "Yes", "-"))
+genomic_features
+```
+ 
+
+
+
+```{r}
+bh_correction <- function(condition_to_correct, fdr, complete_dataset){
+  original_condition_df <- subset(complete_dataset, 
+                                  condition==condition_to_correct)
+  
+  crit.val.df <- original_condition_df %>% 
+    filter(!is.na(pvalue)) %>%  # remove any NA pvalues. I think this makes sense. In any case it doesn't change the results much
+    arrange(pvalue) %>%  # arrange the pvalues in ascending order
+    mutate("pval.rank" = rank(pvalue), # rank pvalues with lower pval having lower rank (closer to 1)
+           "BH" = (pval.rank / length(pval.rank)) * fdr) %>%  # Apply BH correction p / M * r
+    filter(pvalue < BH) # We are searching for the highest pval that is lower than BH crit.val
+  
+  crit.pval <- max(crit.val.df$pvalue) # This would be the highest pvalue that is also lower than the BH value
+  
+  orginal_corrected <- original_condition_df %>% 
+    mutate("corrected_de" = case_when(pvalue <= crit.pval & log2FoldChange > 0 ~ 1,
+                                      pvalue <= crit.pval & log2FoldChange < 0 ~ -1,
+                                      TRUE ~ 0))
+  
+  return(orginal_corrected)
+}
+
+apply_correction <- function(complete_df_salmonella, complete_df_campylobacter, fdr_chosen){
+  
+  complete_corrected_salmonella <- bind_rows(lapply(unique(complete_df_salmonella$condition), 
+                                             bh_correction,
+                                             complete_dataset=complete_df_salmonella,
+                                             fdr=fdr_chosen))
+  
+  complete_corrected_campylobacter <- bind_rows(lapply(unique(complete_df_campylobacter$condition), 
+                                                bh_correction,
+                                                complete_dataset=complete_df_campylobacter,
+                                                fdr=fdr_chosen))
+  
+  all_patterns <- bind_rows(complete_corrected_campylobacter, 
+                            complete_corrected_salmonella)
+  
+  return(all_patterns)
+}
+```
+
+```{r}
+de_patterns <- apply_correction(salmo_de, campy_de, 0.05)
+de_patterns
+```
+
+# Pattern number and frequency
+
+```{r}
+de_patterns.wide <- de_patterns %>% 
+  select(gene_name, corrected_de, condition) %>% 
+  pivot_wider(names_from = condition, values_from=corrected_de) %>% 
+  column_to_rownames("gene_name")
+
+rows_all_zero <- apply(de_patterns.wide, 1, function(x){all(x == 0)})
+joint_de <- de_patterns.wide[!rows_all_zero,]
+joint_de <- joint_de %>% 
+  rownames_to_column("gene_name") %>% 
+  left_join(genomic_features, by="gene_name")
+joint_de
+```
+
+
+```{r}
+joint_de.cds <- joint_de %>% 
+  filter(`# feature` == "CDS")
+pattern_count <- plyr::ddply(joint_de.cds, plyr::.(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic), nrow)
+
+
+min_g <- 15
+x <- pattern_count %>% 
+  count(V1) %>% 
+  rename(n_genes=V1,
+         n_patterns = n) %>% 
+  mutate(n_genes_fctr = factor(n_genes, levels = 1:max(n_genes)),
+         n_patterns_log = log2(n_patterns),
+         selected=if_else(n_genes >= min_g, "chosen", "not_chosen"),
+         ngenes_in_npatterns = n_genes * n_patterns)
+```
+
+```{r}
+n_chosen_patterns <- sum(x[x$selected=="chosen", "n_patterns"])
+n_chosen_genes <- sum(x[x$selected=="chosen", "ngenes_in_npatterns"])
+
+annotation <- paste0("There are ", n_chosen_patterns, " patterns with at least ", min_g, " genes\n (", n_chosen_genes, " genes represented)")
+
+ggplot(x, aes(x=n_genes_fctr, y=n_patterns_log, fill=selected)) +
+    geom_bar(stat="identity", color="black") + 
+  geom_text(aes(label=n_patterns), vjust=-0.3, size=3) +
+  scale_fill_manual(values=c(alpha("red", 0.5), alpha("grey", 0.5))) +
+  annotate("text", x=19, y=9, label=annotation) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(x="Number of genes with a given pattern", y="log2( Number of Patterns with N genes )")
+```
+
+
+```{r}
+patter.db <- pattern_count %>% 
+  rename(n_genes=V1) %>% 
+  arrange(desc(n_genes)) %>% 
+  mutate(pattern_id = paste0("Pattern ", 1:nrow(pattern_count)),
+         patid_ngenes = paste0(pattern_id, " (", n_genes, " genes)"),
+         
+         pattern_id = factor(pattern_id, levels = pattern_id),
+         patid_ngenes = factor(patid_ngenes, levels = patid_ngenes),
+         
+         pattern_str = paste(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic, sep=","))
+patter.db
+```
+
+```{r}
+selected.patterns <- patter.db %>% 
+  filter(n_genes >= min_g)
+
+selected.patterns %>% 
+  mutate("Ctrl" = 0) %>% 
+  gather(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic, Ctrl, 
+         key = "condition", value="DE") %>% 
+  mutate(condition = factor(condition, levels=c("Ctrl","As", "Bs", "Hyp", "Li", "Nd", "Ns", "Oss", "Oxs", "Sp", "Tm", "Vic")),
+         DE_fctr=factor(DE, levels = c(1,0,-1))) %>% 
+  ggplot(aes(x=condition, y=DE, group=pattern_id, color=DE_fctr)) +
+  geom_line(color=alpha("black", 0.75)) +
+  geom_point() +
+  scale_color_manual(values=c("#ef8a62", "grey", "#67a9cf")) +
+  facet_wrap(~ patid_ngenes) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90)) +
+  labs(x="Condition", y="Direction of Differential Expression",
+       title="Differential Expression Patterns")
+```
+
+```{r}
+# This should be an ouput already
+x <- joint_de.cds %>% 
+  mutate(pattern_str = paste(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic, sep=",")) %>% 
+  select(gene_name, `# feature`, symbol, pattern_str) %>% 
+  left_join(patter.db, by="pattern_str") %>% 
+  select(gene_name, pattern_str, pattern_id, patid_ngenes, n_genes)
+```
+
+```{r}
+# Maybe this is what we should show
+pattern_info <- genomic_features %>% 
+  filter(`# feature` == "CDS") %>% 
+  left_join(x, by="gene_name")
+```
+
+```{r}
+# This is the output!!
+collective_info <- de_patterns %>% 
+  left_join(pattern_info, by="gene_name") %>% 
+  filter(`# feature` == "CDS")
+collective_info
+```
+
+```{r}
+collective_info %>% 
+  select(gene_name, symbol, pattern_id, pre.selected, campy.clone, pattern_id, n_genes) %>% 
+  distinct()
+```
+
+```{r}
+selected.pat.logFC <- collective_info %>% 
+  filter(n_genes >= min_g) %>% 
+  select(gene_name, condition, log2FC.shrink, pre.selected, campy.clone, patid_ngenes) %>% 
+  pivot_wider(names_from = condition, values_from=log2FC.shrink) %>% 
+  mutate(Ctrl = 0,
+         organism = sapply(gene_name, function(x){tail(strsplit(x, "-")[[1]], n=1)})) %>% 
+  gather(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic, Ctrl, key = "condition", value = "log2FC.shrink") %>% 
+  mutate(condition = factor(condition, levels = c("Ctrl","As", "Bs", "Hyp", "Li", "Nd", "Ns", "Oss", "Oxs", "Sp", "Tm", "Vic")))
+
+selected.pat.logFC
+```
+
+```{r}
+camp.data <- subset(selected.pat.logFC, organism=="Campylobacter")
+salm.data <- subset(selected.pat.logFC, organism=="Salmonella")
+
+
+campy_highlight <- ggplot() +
+  geom_line(data=salm.data, aes(x=condition, y=log2FC.shrink, group=gene_name),
+            color=alpha("grey", 0.5)) +
+  geom_line(data=camp.data, aes(x=condition, y=log2FC.shrink, group=gene_name),
+            color=alpha("steelblue", 0.5)) +
+  facet_wrap(~ patid_ngenes, scales="free") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90)) +
+  labs(x="Condition", y="log Fold Change",
+       title="Fold Change Patterns")
+
+campy_highlight
+```
+
+```{r}
+salm.pre <- subset(salm.data, pre.selected == "Yes")
+camp.pre <- subset(camp.data, pre.selected == "Yes")
+camp.clo <- subset(camp.pre, campy.clone =="Yes")
+```
+
+```{r}
+ggplot() +
+  geom_line(data=salm.data, aes(x=condition, y=log2FC.shrink, group=gene_name),
+            color=alpha("grey", 0.5)) +
+  geom_line(data=salm.pre, aes(x=condition, y=log2FC.shrink, group=gene_name),
+            color=alpha("red", 0.5)) +
+  facet_wrap(~ patid_ngenes, scales="free") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90)) +
+  labs(x="Condition", y="log Fold Change",
+       title="Fold Change Patterns")
+```
+
+```{r}
+ggplot() +
+  geom_line(data=camp.data, aes(x=condition, y=log2FC.shrink, group=gene_name),
+            color=alpha("grey", 0.5)) +
+  geom_line(data=camp.pre, aes(x=condition, y=log2FC.shrink, group=gene_name),
+            color=alpha("steelblue", 1)) +
+  geom_line(data=camp.clo, aes(x=condition, y=log2FC.shrink, group=gene_name),
+            color=alpha("red", 1)) +
+  facet_wrap(~ patid_ngenes, scales="free") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90)) +
+  labs(x="Condition", y="log Fold Change",
+       title="Fold Change Patterns",
+       subtitle = "Preselected - blue.\nClone- red")
+```
+
+
+# focused
+```{r}
+f_pattern <- "Pattern 1"
+collective_info
+```
+
+

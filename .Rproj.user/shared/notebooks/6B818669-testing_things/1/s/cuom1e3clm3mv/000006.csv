@@ -1,0 +1,3 @@
+"0","collective_info %>% "
+"0","  select(gene_name, symbol, pattern_id, pre.selected, campy.clone, pattern_id, n_genes) %>% "
+"0","  distinct()"

@@ -1,0 +1,4 @@
+"0","# Maybe this is what we should show"
+"0","pattern_info <- genomic_features %>% "
+"0","  filter(`# feature` == ""CDS"") %>% "
+"0","  left_join(x, by=""gene_name"")"
