@@ -1,0 +1,99 @@
+---
+title: "Tutorial on Differential Expression"
+author: "Roberto Olayo"
+date: "6/14/2021"
+output: html_document
+---
+  
+  
+This app is meant to help us pick out some representative genes, and take a look at the patterns the occur.  
+This analysis is based on grouping together genes based on their differential expression patterns with respect to the Ctrl condition. Each gene can now be described as a vector of 1 (upregulated), 0 (not differentially expressed), and -1 (downregulated) to signal their behavior in each condition.   
+
+This is a brief tutorial on how to use this app.  
+
+# How do I start the app?  
+In order to use the app you can run the following commands:  
+```{r eval=FALSE}
+library(shiny)
+runUrl("https://github.com/rolayoalarcon/reporter_app_de/raw/main/reporter_selection_de.zip")
+```
+
+After a few seconds, you will see a screen like this.    
+![](figs/Screenshot 2021-06-14 at 17.01.25.png)
+You will also need to install the following packages  
+
+1. shiny  
+2. tidyverse  
+3. plotly  
+4. DT  
+5. readxl    
+6. plyr
+
+You can install these with the following command
+```{r eval=FALSE}
+install.packages("package name")
+``` 
+  
+You will notice that there are two tabs, one for sRNAs and one for CDSs. They both have the same structure, so I will show the examples with the CDSs. 
+Everything should also apply to the sRNAs.  
+  
+The main page contains five main sections.   
+  
+  
+## Section 01: Pattern behavior and sizes.   
+The first section consists of a set of parameters on the sidebar and a bar graph in the center.  
+  
+![](figs/Screenshot 2021-06-14 at 17.51.13.png)
+  
+### Parameters
+There are four parameters we can play with when looking at our patterns:  
+  
+1. *Conditions to evaluate*: These would be the stress conditions for which we would like to look at the patterns. You can remove conditions as you like. A couple of things to keep in mind: make sure that the input does not end in a ",", and also make sure there is no space between a "," and the next condition. This means "As,Bs,Hyp" would be accepted, but "As, Bs, Hyp," would not be accepted.   
+2. *False Discovery Rate*:  As mentioned in the introduction, this analysis is based on differential expression analysis. Briefly, we use the *DESeq2* package to evaluate whether genes are differentially expressed in a condition with respect to Ctrl. This is done through a statistical test, that generates a p-value. Since we test multiple genes, there is a need to correct for multiple hypothesis testing. We adjust the p-value cutoff with the Benjamini-Hochberg procedure. For this, we need a False Discovery Rate in order to select a new p-value cutoff and maintain our desired false positive rate. We adjust the p-value cutoff for each condition separately.    
+3. *Minimum Absolute Fold Change*: Genes will only be considered as differentially expressed if their log Fold Change in expression with respect to control is above this threshold. This is an additional filter to the False Discovery Rate. If we select a minimum fold change of 1.5, for example, a gene will only be considered differentially expressed if the p-value is below the adjusted threshold *and* their absolute log Fold Change is above the given filter.  
+4. *Minimum Number of genes per pattern*: We can use the information in the plot to guide the decision for the minimum number of genes that follow the same pattern in order for said pattern to be considered in the rest of the analysis. An explanation of the plot is found below.  
+  
+The plot shows the relationship between the number of genes that follow a given differential expression pattern, and the number of patterns followed by a given number of genes. The *y*-axis shows the number of patterns followed by the number of genes shown in the *x*-axis. The *y*-axis is in log scale, but the real number of patterns followed by *x* genes is shown on the top of each bar. Most patterns are followed by a few number of genes. Very few patterns are followed by a lot of genes.
+   
+In red you see the patterns that are followed by the *Minimum Number of genes per pattern* highlighted. The text in the middle of the plot will tell how many patterns are followed by at least the *Minimum Number of genes per pattern* parameter, and also the total number of genes that would be considered.  
+
+## Section 02: Showing the patterns    
+Once we have selected parameters in the section above, we can look at the differential expression patterns that are selected. You can adjust the minimum number of genes, but all of the other parameters remain the same.   
+In this plot, only the 1, 0, -1 values are shown. Above each subplot you will find the *pattern id* and the number of genes that follow that pattern.  
+   
+![](figs/Screenshot 2021-06-14 at 18.20.53.png)
+  
+## Section 03: Genes that follow each pattern  
+Once we have seen the patterns that occur under our selected parameters, we can take a look at the genes that follow those patterns. The *y*-axis shows the log Fold Change with respect to Ctrl and the *x*-axis shows the conditions. There are different options for coloring the genes. How to interpret each color option is shown in the subtitle of the plot.   
+  
+![](figs/Screenshot 2021-06-14 at 18.24.31.png)
+  
+## Section 04: Focusing on a pattern  
+Of course, we will want to focus on a particular pattern to see which genes are contained in it.  
+  
+## Parameters:  
+1. *Focus on this pattern*: Here you can type in the pattern that you want to focus on. It accepts inputs of the style *Pattern x* where x is a number.  
+2. *Show*: Here you can choose whether the log Fold Change plot should genes from both organisms, only Campy genes, or only Salmonella genes.   
+3. *Highlight gene*: Here you can type in the *gene_name* of a gene found in the pattern and it will be highlighted. You can find the *gene_name* in the table below under the column of the same name. It is possible to highlight more than one gene, by separating them with a ",". As with the condition input, make sure there is no space between each gene name. Every time you want to look at a different pattern, make sure you write "None" in this field, so you don't get an error.   
+  
+![](figs/Screenshot 2021-06-14 at 18.34.29.png)
+
+## Section 05: A table for all genes
+
+Finally in the table a the bottom you can search for all genes, whether or not they appear in the patterns shown above. You can look for a specific gene and you will find the following info:  
+1. *gene_name*: This is the internal name I have for each gene. It consists of the locus tag and the organism from which it comes from. Maybe this name should be changed in the future.  
+2. *symbol*: the gene's symbol.  
+3. *pattern_id*: this is the pattern that this gene follows. If your gene does not have a pattern_id, it means that it does not change under any condition, or that it was filtered out due to a low number of reads. If there is a particular gene you are interested in, let me know.  
+4. *pre.selected*: Both Susanne and Sarah gave me a list of genes that they are interested in looking at. This field indicates whether this gene was in the lists they gave me.  
+5. *campy.clone*: In the list for Campylobacter, there is a field indicating whether this gene is a candidate for cloning.   
+6. *n_genes*: This field shows the number of genes that have the same *pattern_id* as the gene in question. If *n_genes* is 1, then this gene is the only one with this *pattern_id*, meaning that this gene's pattern is unique and is not followed by any other pattern.  
+  
+You can use the *pattern_id* to look up the gene's behavior in the field above. Meaning if you are interested in *Pattern 133*, you can type that in the *Focus on this pattern* field in from the section above.   
+![](figs/Screenshot 2021-06-14 at 18.46.52.png)
+
+# That's all!  
+If you have any questions, let me know!
+
+
+
+

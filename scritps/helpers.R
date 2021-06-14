@@ -2,7 +2,8 @@ library(tidyverse)
 library(plotly)
 
 
-bh_correction <- function(condition_to_correct, fdr, complete_dataset){
+bh_correction <- function(condition_to_correct, fdr, complete_dataset,
+                          fc){
   original_condition_df <- subset(complete_dataset, 
                                   condition==condition_to_correct)
   
@@ -16,24 +17,27 @@ bh_correction <- function(condition_to_correct, fdr, complete_dataset){
   crit.pval <- max(crit.val.df$pvalue) # This would be the highest pvalue that is also lower than the BH value
   
   orginal_corrected <- original_condition_df %>% 
-    mutate("corrected_de" = case_when(pvalue <= crit.pval & log2FoldChange > 0 ~ 1,
-                                      pvalue <= crit.pval & log2FoldChange < 0 ~ -1,
+    mutate("corrected_de" = case_when(pvalue <= crit.pval & log2FoldChange > fc ~ 1,
+                                      pvalue <= crit.pval & log2FoldChange < (-1*fc) ~ -1,
                                       TRUE ~ 0))
   
   return(orginal_corrected)
 }
 
-apply_correction <- function(complete_df_salmonella, complete_df_campylobacter, fdr_chosen){
+apply_correction <- function(complete_df_salmonella, complete_df_campylobacter, 
+                             fdr_chosen, fc_chosen){
   
   complete_corrected_salmonella <- bind_rows(lapply(unique(complete_df_salmonella$condition), 
                                                     bh_correction,
                                                     complete_dataset=complete_df_salmonella,
-                                                    fdr=fdr_chosen))
+                                                    fdr=fdr_chosen,
+                                                    fc=fc_chosen))
   
   complete_corrected_campylobacter <- bind_rows(lapply(unique(complete_df_campylobacter$condition), 
                                                        bh_correction,
                                                        complete_dataset=complete_df_campylobacter,
-                                                       fdr=fdr_chosen))
+                                                       fdr=fdr_chosen,
+                                                       fc=fc_chosen))
   
   all_patterns <- bind_rows(complete_corrected_campylobacter, 
                             complete_corrected_salmonella)
@@ -41,11 +45,13 @@ apply_correction <- function(complete_df_salmonella, complete_df_campylobacter, 
   return(all_patterns)
 }
 
-gather_patterns <- function(de_dataframe, features_df, feature_of_interest){
+gather_patterns <- function(de_dataframe, features_df, feature_of_interest,
+                            selected_conditions){
   
   # Format the dataframe to get rows of 1s and 0s
   de_patterns.wide <- de_dataframe %>% 
     select(gene_name, corrected_de, condition) %>% 
+    filter(condition %in% selected_conditions) %>% 
     pivot_wider(names_from = condition, values_from=corrected_de) %>% 
     column_to_rownames("gene_name")
   
@@ -62,14 +68,15 @@ gather_patterns <- function(de_dataframe, features_df, feature_of_interest){
   
 }
   
-plot_frequency <- function(joint_de, min_genes, xcoord, ycoord){
+plot_frequency <- function(joint_de, min_genes, xcoord, ycoord,
+                           selected_conditions){
   
   # Count pattern frequency
-  pattern_count <- plyr::ddply(joint_de, plyr::.(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic), nrow)
+  pattern_count <- plyr::count(joint_de, vars = selected_conditions)
   
   freq.df <- pattern_count %>% 
-    count(V1) %>% 
-    rename(n_genes=V1,
+    count(freq) %>% 
+    rename(n_genes=freq,
            n_patterns = n) %>% 
     mutate(n_genes_fctr = factor(n_genes, levels = 1:max(n_genes)),
            n_patterns_log = log2(n_patterns),
@@ -94,34 +101,35 @@ plot_frequency <- function(joint_de, min_genes, xcoord, ycoord){
   
 }
 
-create_pattern_database <- function(joint_de){
+create_pattern_database <- function(joint_de, selected_conditions){
   
   # Count patterns
-  pattern_count <- plyr::ddply(joint_de, plyr::.(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic), nrow)
+  pattern_count <- pattern_count <- plyr::count(joint_de, vars = selected_conditions)
   
   pattern.db <- pattern_count %>% 
-    rename(n_genes=V1) %>% 
+    rename(n_genes=freq) %>% 
     arrange(desc(n_genes)) %>% 
     mutate(pattern_id = paste0("Pattern ", 1:nrow(pattern_count)),
            patid_ngenes = paste0(pattern_id, " (", n_genes, " genes)"),
            
            pattern_id = factor(pattern_id, levels = pattern_id),
-           patid_ngenes = factor(patid_ngenes, levels = patid_ngenes),
-           
-           pattern_str = paste(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic, sep=","))
+           patid_ngenes = factor(patid_ngenes, levels = patid_ngenes))
+  
+  pattern.db$pattern_str <- apply(pattern.db[, selected_conditions], 1, paste, 
+                                  collapse=',')
   
   return(pattern.db)
 }
 
 
-plot_patterns <- function(pat.db, min_genes){
+plot_patterns <- function(pat.db, min_genes, selected_conditions){
   
   selected.patterns <- pat.db %>% 
     filter(n_genes >= min_genes) %>% 
     mutate(Ctrl = 0) %>% 
-    gather(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic, Ctrl, 
+    gather(c(selected_conditions, "Ctrl"), 
            key = "condition", value="DE") %>% 
-    mutate(condition = factor(condition, levels=c("Ctrl","As", "Bs", "Hyp", "Li", "Nd", "Ns", "Oss", "Oxs", "Sp", "Tm", "Vic")),
+    mutate(condition = factor(condition, levels=c("Ctrl", selected_conditions)),
            DE_fctr=factor(DE, levels = c(1,0,-1)))
   
   ggplot(selected.patterns, aes(x=condition, y=DE, group=pattern_id, color=DE_fctr)) +
@@ -136,10 +144,12 @@ plot_patterns <- function(pat.db, min_genes){
          title="Differential Expression Patterns")
 }
 
-combine_patterns_and_fc <- function(pattern.database.df, pattern_by_gene_df, information_df, features_df, feature_of_interest){
+combine_patterns_and_fc <- function(pattern.database.df, pattern_by_gene_df, 
+                                    information_df, features_df, feature_of_interest,
+                                    selected_conditions){
   
   gene_and_patternID <- pattern_by_gene_df %>% 
-    mutate(pattern_str = paste(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic, sep=",")) %>% 
+    mutate(pattern_str = apply(pattern_by_gene_df[,selected_conditions], 1, paste, collapse=',')) %>% 
     select(gene_name, `# feature`, symbol, pattern_str) %>% 
     left_join(pattern.database.df, by="pattern_str") %>% 
     select(gene_name, pattern_str, pattern_id, patid_ngenes, n_genes)
@@ -156,7 +166,7 @@ combine_patterns_and_fc <- function(pattern.database.df, pattern_by_gene_df, inf
 }
 
 
-plot_gene_wrap <- function(complete_data, min_genes, color_by_this){
+plot_gene_wrap <- function(complete_data, min_genes, color_by_this, selected_conditions){
   
   plot_data <- complete_data %>% 
     filter(n_genes >= min_genes) %>% 
@@ -164,8 +174,8 @@ plot_gene_wrap <- function(complete_data, min_genes, color_by_this){
     pivot_wider(names_from = condition, values_from=log2FC.shrink) %>% 
     mutate(Ctrl = 0,
            organism = sapply(gene_name, function(x){tail(strsplit(x, "-")[[1]], n=1)})) %>% 
-    gather(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic, Ctrl, key = "condition", value = "log2FC.shrink") %>% 
-    mutate(condition = factor(condition, levels = c("Ctrl","As", "Bs", "Hyp", "Li", "Nd", "Ns", "Oss", "Oxs", "Sp", "Tm", "Vic")))
+    gather(c("Ctrl", selected_conditions), key = "condition", value = "log2FC.shrink") %>% 
+    mutate(condition = factor(condition, levels = c("Ctrl", selected_conditions)))
   
   if(color_by_this == "organism"){
     camp.data <- subset(plot_data, organism=="Campylobacter")
@@ -216,7 +226,7 @@ plot_gene_wrap <- function(complete_data, min_genes, color_by_this){
       geom_line(data=camp.pre, aes(x=condition, y=log2FC.shrink, group=gene_name),
                 color=alpha("steelblue", 1)) +
       geom_line(data=camp.clo, aes(x=condition, y=log2FC.shrink, group=gene_name),
-                color=alpha("red", 1))
+                color=alpha("red", 1)) +
       facet_wrap(~ patid_ngenes, scales="free") +
       theme_minimal() +
       theme(legend.position = "none",
@@ -262,14 +272,13 @@ focused_profile <- function(which_organism, which_cluster, which_gene,
 }
 
 
-focused_profile_de <- function(pat.db, which_pattern){
+focused_profile_de <- function(pat.db, which_pattern, selected_conditions){
   
   pat.lot <- pat.db %>% 
     filter(pattern_id == which_pattern) %>% 
-    mutate(Ctrl = 0) %>% 
-    gather(As, Bs, Hyp, Li, Nd, Ns, Oss, Oxs, Sp, Tm, Vic, Ctrl, 
+    gather(selected_conditions, 
            key = "condition", value="DE") %>% 
-    mutate(condition = factor(condition, levels=c("Ctrl","As", "Bs", "Hyp", "Li", "Nd", "Ns", "Oss", "Oxs", "Sp", "Tm", "Vic")),
+    mutate(condition = factor(condition, levels=selected_conditions),
            DE_fctr=factor(DE, levels = c(1,0,-1)))
   
   p <- ggplot(pat.lot, aes(x=condition, y=DE, group=1, color=DE_fctr)) +

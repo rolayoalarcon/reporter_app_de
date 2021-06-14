@@ -12,6 +12,7 @@ library(plotly)
 library(DT)
 library(readxl)
 source("scritps/helpers.R")
+library(tidyverse)
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
@@ -19,11 +20,18 @@ ui <- fluidPage(
         tabPanel(title = "CDS",
                  sidebarLayout(
                      sidebarPanel(
+                       textInput(inputId = "selcond.cds",
+                                 label = "Conditions to evaluate",
+                                 value = "As,Bs,Hyp,Li,Nd,Ns,Oss,Oxs,Sp,Tm,Vic"),
                          numericInput(inputId = "fdr.cds",
                                       label="False Discovery Rate",
                                       value=0.05,
                                       min=0,
                                       max=1), # FDR input
+                         numericInput(inputId = "fc.cds",
+                                      label="Minimum Absolute Fold Change",
+                                      value=0,
+                                      min=0), # fold change
                          numericInput(inputId = "min_genes.cds",
                                       label="Minimum Number of genes per pattern", 
                                       value=15,
@@ -141,11 +149,18 @@ ui <- fluidPage(
         tabPanel(title = "sRNA",
                  sidebarLayout(
                      sidebarPanel(
+                       textInput(inputId = "selcond.srna",
+                                 label = "Conditions to evaluate",
+                                 value = "As,Bs,Hyp,Li,Nd,Ns,Oss,Oxs,Sp,Tm,Vic"),
                          numericInput(inputId = "fdr.srna",
                                       label="False Discovery Rate",
                                       value=0.05,
                                       min=0,
                                       max=1), # FDR input
+                         numericInput(inputId = "fc.srna",
+                                      label="Minimum Absolute Fold Change",
+                                      value=0,
+                                      min=0), # fcmin
                          numericInput(inputId = "min_genes.srna",
                                       label="Minimum Number of genes per pattern", 
                                       value=5,
@@ -275,6 +290,20 @@ salm_de <- read_tsv("data/de_results_salmonella.tsv") %>%
     mutate(gene_name = paste0(locus_tag, "-Salmonella"))
 
 # Reading in genomic features
+salm_features <- read_tsv("data/merged_features_salmonella.tsv") %>% 
+  mutate(organism="Salmonella",
+         gene_name=paste0(locus_tag, "-Salmonella")) %>% 
+  select(gene_name, `# feature`, symbol)
+
+camp_features <- read_tsv("data/merged_features_campylobacter.tsv") %>% 
+  mutate(organism="Campylobacter",
+         gene_name=paste0(locus_tag, "-Campylobacter")) %>% 
+  select(gene_name, `# feature`, symbol)
+
+genomic_features <- bind_rows(camp_features, salm_features)
+
+
+# Adding pre-selected info to genomic features
 salm.preselection <- read_tsv("data/pre_selected_salmonella.txt") %>% 
     rename("symbol"=ID) %>% 
     left_join(genomic_features, by="symbol") %>% 
@@ -286,12 +315,9 @@ camp.preselection <- read_excel("data/Campy regulators and stress resp for Rober
     mutate("gene_name" = paste0(locus_tag, "-Campylobacter"),
            clone=if_else(is.na(clone), "No", "Yes"))
 
-# Adding pre-selected info to genomic features
 all_preselected <- c(salm.preselection$gene_name, camp.preselection$gene_name)
 campy.clone <-  subset(camp.preselection, clone=="Yes")$gene_name
 
-
-genomic_features <- bind_rows(camp_features, salm_features)
 
 genomic_features <- genomic_features %>% 
     mutate("pre.selected" = if_else(gene_name %in% all_preselected, "Yes", "-"),
@@ -301,22 +327,30 @@ genomic_features <- genomic_features %>%
 # Define server logic required to draw a histogram
 server <- function(input, output) {
     pattern_parameters_cds <- reactiveValues(fdr_min = 0.05,
-                                             min_genes_in_pattern = 15)
+                                             fc_min = 0,
+                                             min_genes_in_pattern = 15,
+                                             conditions = c("As","Bs", "Hyp", "Li",  "Nd",  "Ns",  "Oss", "Oxs", "Sp",  "Tm",  "Vic"))
     
     pattern_parameters_srna <- reactiveValues(fdr_min = 0.05,
-                                             min_genes_in_pattern = 5)
+                                              fc_min = 0,
+                                             min_genes_in_pattern = 5,
+                                             conditions = c("As","Bs", "Hyp", "Li",  "Nd",  "Ns",  "Oss", "Oxs", "Sp",  "Tm",  "Vic"))
     
     # Initialize parameters
     ## CDS
     observeEvent(input$pattern_param_cds, {
         pattern_parameters_cds$fdr_min <- input$fdr.cds
+        pattern_parameters_cds$fc_min <- input$fc.cds
         pattern_parameters_cds$min_genes_in_pattern <-  input$min_genes.cds
+        pattern_parameters_cds$conditions <- strsplit(input$selcond.cds, ",")[[1]]
     })
     
     ## sRNA
     observeEvent(input$pattern_param_srna, {
         pattern_parameters_srna$fdr_min <- input$fdr.srna
+        pattern_parameters_srna$fc_min <- input$fc.srna
         pattern_parameters_srna$min_genes_in_pattern <-  input$min_genes.srna
+        pattern_parameters_srna$conditions <- strsplit(input$selcond.srna, ",")[[1]]
     })
     
     # Adjust FDR-rate
@@ -325,7 +359,8 @@ server <- function(input, output) {
         apply_correction(
             complete_df_salmonella=salm_de, 
             complete_df_campylobacter=camp_de, 
-            fdr_chosen=pattern_parameters_cds$fdr_min
+            fdr_chosen=pattern_parameters_cds$fdr_min,
+            fc_chosen=pattern_parameters_cds$fc_min 
         )
     })
     
@@ -333,7 +368,8 @@ server <- function(input, output) {
         apply_correction(
             complete_df_salmonella=salm_de, 
             complete_df_campylobacter=camp_de, 
-            fdr_chosen=pattern_parameters_srna$fdr_min
+            fdr_chosen=pattern_parameters_srna$fdr_min,
+            fc_chosen=pattern_parameters_srna$fc_min 
         )
     })
     
@@ -344,13 +380,15 @@ server <- function(input, output) {
     cds.de_patterns <- reactive({
         gather_patterns(de_dataframe = cds.adjust.de(),
                         features_df = genomic_features,
-                        feature_of_interest = c("CDS"))
+                        feature_of_interest = c("CDS"),
+                        selected_conditions=pattern_parameters_cds$conditions)
     })
     
     srna.de_patterns <- reactive({
         gather_patterns(de_dataframe = srna.adjust.de(),
                         features_df = genomic_features,
-                        feature_of_interest = c("sRNA", "sRNA_candidate"))
+                        feature_of_interest = c("sRNA", "sRNA_candidate"),
+                        selected_conditions=pattern_parameters_srna$conditions)
     })
     
     # Plot barplot
@@ -359,7 +397,8 @@ server <- function(input, output) {
         plot_frequency(joint_de = cds.de_patterns(), 
                        min_genes = pattern_parameters_cds$min_genes_in_pattern,
                        xcoord = 19,
-                       ycoord=9)
+                       ycoord=9,
+                       selected_conditions=pattern_parameters_cds$conditions)
     })
     
     ## sRNA
@@ -367,18 +406,21 @@ server <- function(input, output) {
         plot_frequency(joint_de = srna.de_patterns(), 
                        min_genes = pattern_parameters_srna$min_genes_in_pattern,
                        xcoord = 5,
-                       ycoord=6)
+                       ycoord=6,
+                       selected_conditions=pattern_parameters_srna$conditions)
     })
     
     # Gather the pattern database
     ## CDS
     pattern.database.cds <- reactive({
-        create_pattern_database(joint_de = cds.de_patterns())
+        create_pattern_database(joint_de = cds.de_patterns(),
+                                selected_conditions=pattern_parameters_cds$conditions)
     })
     
     ##sRNA
     pattern.database.srna <- reactive({
-        create_pattern_database(joint_de = srna.de_patterns())
+        create_pattern_database(joint_de = srna.de_patterns(),
+                                selected_conditions=pattern_parameters_srna$conditions)
     })
     
     # Pattern wrap parameters
@@ -398,13 +440,15 @@ server <- function(input, output) {
     ## CDS
     output$pattern_wrap.cds <- renderPlot({
         plot_patterns(pat.db = pattern.database.cds(), 
-                      min_genes = pattern_wrap_cds$min_genes_in_pattern)
+                      min_genes = pattern_wrap_cds$min_genes_in_pattern,
+                      selected_conditions=pattern_parameters_cds$conditions)
     }, height = 750)
     
     ## sRNA
     output$pattern_wrap.srna <- renderPlot({
         plot_patterns(pat.db = pattern.database.srna(), 
-                      min_genes = pattern_wrap_srna$min_genes_in_pattern)
+                      min_genes = pattern_wrap_srna$min_genes_in_pattern,
+                      selected_conditions=pattern_parameters_srna$conditions)
     }, height = 750)
     
     
@@ -415,7 +459,8 @@ server <- function(input, output) {
                                 pattern_by_gene_df = cds.de_patterns(), 
                                 information_df = cds.adjust.de(), 
                                 features_df = genomic_features, 
-                                feature_of_interest = c("CDS"))
+                                feature_of_interest = c("CDS"),
+                                selected_conditions=pattern_parameters_cds$conditions)
     })
     
     ## sRNA
@@ -424,7 +469,8 @@ server <- function(input, output) {
                                 pattern_by_gene_df = srna.de_patterns(), 
                                 information_df = srna.adjust.de(), 
                                 features_df = genomic_features, 
-                                feature_of_interest = c("sRNA", "sRNA_candidate"))
+                                feature_of_interest = c("sRNA", "sRNA_candidate"),
+                                selected_conditions=pattern_parameters_srna$conditions)
     })
     
     # Plot gene_wrap
@@ -432,14 +478,16 @@ server <- function(input, output) {
     output$gene_wrap.cds <- renderPlot({
         plot_gene_wrap(complete_data = collective_df.cds(), 
                        min_genes = pattern_wrap_cds$min_genes_in_pattern, 
-                       color_by_this = input$color_by_cds)
+                       color_by_this = input$color_by_cds,
+                       selected_conditions=pattern_parameters_cds$conditions)
     }, height = 750)
     
     ## sRNA
     output$gene_wrap.srna <- renderPlot({
         plot_gene_wrap(complete_data = collective_df.srna(), 
                        min_genes = pattern_wrap_srna$min_genes_in_pattern, 
-                       color_by_this = input$color_by_srna)
+                       color_by_this = input$color_by_srna,
+                       selected_conditions=pattern_parameters_srna$conditions)
     }, height = 750)
     
     # Focused Data Parameters
@@ -493,13 +541,15 @@ server <- function(input, output) {
     ## CDS
     output$focuse_de_cds <- renderPlot({
         focused_profile_de(which_pattern = focus_parameters_cds$c_focus, 
-                           pat.db = pattern.database.cds())
+                           pat.db = pattern.database.cds(),
+                           selected_conditions=pattern_parameters_cds$conditions)
     })
     
     ## sRNA
     output$focuse_de_srna <- renderPlot({
         focused_profile_de(which_pattern = focus_parameters_srna$c_focus, 
-                           pat.db = pattern.database.srna())
+                           pat.db = pattern.database.srna(),
+                           selected_conditions=pattern_parameters_srna$conditions)
     })
     
     

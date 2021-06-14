@@ -1,5 +1,0 @@
-"0","# This is the output!!"
-"0","collective_info <- de_patterns %>% "
-"0","  left_join(pattern_info, by=""gene_name"") %>% "
-"0","  filter(`# feature` == ""CDS"")"
-"0","collective_info"
