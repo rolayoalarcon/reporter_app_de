@@ -72,7 +72,9 @@ plot_frequency <- function(joint_de, min_genes, xcoord, ycoord,
                            selected_conditions){
   
   # Count pattern frequency
-  pattern_count <- plyr::count(joint_de, vars = selected_conditions)
+  pattern_count <- plyr::count(joint_de %>% 
+                                 select(-locus_tag.NCTC11168) %>% 
+                                 distinct(.keep_all = T), vars = selected_conditions)
   
   freq.df <- pattern_count %>% 
     count(freq) %>% 
@@ -104,7 +106,9 @@ plot_frequency <- function(joint_de, min_genes, xcoord, ycoord,
 create_pattern_database <- function(joint_de, selected_conditions){
   
   # Count patterns
-  pattern_count <- pattern_count <- plyr::count(joint_de, vars = selected_conditions)
+  pattern_count <- pattern_count <- plyr::count(joint_de %>% 
+                                                  select(-locus_tag.NCTC11168) %>% 
+                                                  distinct(.keep_all = T), vars = selected_conditions)
   
   pattern.db <- pattern_count %>% 
     rename(n_genes=freq) %>% 
@@ -170,7 +174,8 @@ plot_gene_wrap <- function(complete_data, min_genes, color_by_this, selected_con
   
   plot_data <- complete_data %>% 
     filter(n_genes >= min_genes) %>% 
-    select(gene_name, condition, log2FC.shrink, pre.selected, campy.clone, patid_ngenes) %>% 
+    select(gene_name, condition, log2FC.shrink, pre.selected, campy.clone, patid_ngenes, TF, ARG_gene) %>% 
+    distinct(.keep_all = T) %>% 
     pivot_wider(names_from = condition, values_from=log2FC.shrink) %>% 
     mutate(Ctrl = 0,
            organism = sapply(gene_name, function(x){tail(strsplit(x, "-")[[1]], n=1)})) %>% 
@@ -236,6 +241,48 @@ plot_gene_wrap <- function(complete_data, min_genes, color_by_this, selected_con
            subtitle = "Pre-selected in blue\nCloned in red")
     
     return(campylobacter.pre.wrap)
+    
+  }else if(color_by_this == "Transcription Factors (KEGG)"){
+    camp.tfs <- subset(plot_data, organism=="Campylobacter" & TF=="TF")
+    salm.tfs <- subset(plot_data, organism=="Salmonella" & TF=="TF")
+    
+    tf.wrap <- ggplot() + 
+      geom_line(data=plot_data, aes(x=condition, y=log2FC.shrink, group=gene_name),
+                color=alpha("grey", 0.5)) +
+      geom_line(data=salm.tfs, aes(x=condition, y=log2FC.shrink, group=gene_name),
+                color=alpha("#d95f02", 1)) +
+      geom_line(data=camp.tfs, aes(x=condition, y=log2FC.shrink, group=gene_name),
+                color=alpha("#7570b3", 1)) +
+      facet_wrap(~ patid_ngenes, scales="free") +
+      theme_minimal() +
+      theme(legend.position = "none",
+            axis.text.x = element_text(angle = 90)) +
+      labs(x="Condition", y="log Fold Change",
+           title="Transcription Factors",
+           subtitle = "Campylobacter TFs in purple\nSalmonella TFs in red")
+    
+    return(tf.wrap)
+      
+  }else if(color_by_this == "AMR genes (KEGG)"){
+    camp.amr <- subset(plot_data, organism=="Campylobacter" & ARG_gene=="ARG")
+    salm.amr <- subset(plot_data, organism=="Salmonella" & ARG_gene=="ARG")
+    
+    tf.wrap <- ggplot() + 
+      geom_line(data=plot_data, aes(x=condition, y=log2FC.shrink, group=gene_name),
+                color=alpha("grey", 0.5)) +
+      geom_line(data=salm.amr, aes(x=condition, y=log2FC.shrink, group=gene_name),
+                color=alpha("#d95f02", 1)) +
+      geom_line(data=camp.amr, aes(x=condition, y=log2FC.shrink, group=gene_name),
+                color=alpha("#7570b3", 1)) +
+      facet_wrap(~ patid_ngenes, scales="free") +
+      theme_minimal() +
+      theme(legend.position = "none",
+            axis.text.x = element_text(angle = 90)) +
+      labs(x="Condition", y="log Fold Change",
+           title="Antimicrobial Resistance Genes",
+           subtitle = "Campylobacter ARGs in purple\nSalmonella ARGs in red")
+    
+    return(tf.wrap)
   }
 }
 
@@ -295,16 +342,17 @@ focused_profile_de <- function(pat.db, which_pattern, selected_conditions){
 
 pattern_table <- function(complete_dataframe, which_pattern){
   complete_dataframe %>% 
-  select(gene_name, symbol, pattern_id, pre.selected, 
-         campy.clone, pattern_id, n_genes) %>% 
+  select(gene_name, locus_tag, locus_tag.NCTC11168, symbol, pattern_id, 
+         pre.selected, TF, ARG_gene,
+         campy.clone, n_genes) %>% 
     filter(pattern_id == which_pattern) %>% 
     distinct()
 }
 
 all_genes_table <- function(complete_dataframe){
   complete_dataframe %>% 
-    select(gene_name, symbol, pattern_id, pre.selected, 
-           campy.clone, pattern_id, n_genes) %>% 
+    select(gene_name, locus_tag, symbol, locus_tag.NCTC11168, pre.selected, 
+           pattern_id, campy.clone, n_genes, TF, tf_name, family, subtype) %>% 
     distinct()
 }
   

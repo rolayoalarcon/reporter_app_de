@@ -78,7 +78,9 @@ ui <- fluidPage(
                                      label = "Color genes according to:",
                                      choices = list("organism",
                                                     "Salmonella pre-selection",
-                                                    "Campylobacter pre-selection"))
+                                                    "Campylobacter pre-selection",
+                                                    "Transcription Factors (KEGG)",
+                                                    "AMR genes (KEGG)"))
                      ), # end of sidebar gene wrap
                      mainPanel(plotOutput("gene_wrap.cds"), height="750px",
                                br(),
@@ -293,15 +295,44 @@ salm_de <- read_tsv("data/de_results_salmonella.tsv") %>%
 salm_features <- read_tsv("data/merged_features_salmonella.tsv") %>% 
   mutate(organism="Salmonella",
          gene_name=paste0(locus_tag, "-Salmonella")) %>% 
-  select(gene_name, `# feature`, symbol)
+  select(gene_name, `# feature`, symbol, locus_tag)
 
 camp_features <- read_tsv("data/merged_features_campylobacter.tsv") %>% 
   mutate(organism="Campylobacter",
          gene_name=paste0(locus_tag, "-Campylobacter")) %>% 
-  select(gene_name, `# feature`, symbol)
+  select(gene_name, `# feature`, symbol, locus_tag)
 
 genomic_features <- bind_rows(camp_features, salm_features)
 
+# Reading TF info
+camp_tf <- read_tsv("data/cjj_TFs.tsv")
+salm_tf <- read_tsv("data/sey_TFs.tsv")
+joint_tfs <- bind_rows(camp_tf, salm_tf) %>% 
+  select(locus_tag, tf_name, family, subtype)
+
+genomic_features <- genomic_features %>% 
+  mutate("TF" = if_else(locus_tag %in% joint_tfs$locus_tag, "TF", "-"))
+
+genomic_features <- genomic_features %>% 
+  left_join(joint_tfs, by="locus_tag")
+
+
+# Reading AMR
+camp_amr <- read_tsv("data/cjj_AMR.tsv")
+salm_amr <- read_tsv("data/sey_AMR.tsv")
+joint_amr <- bind_rows(camp_amr, salm_amr)
+
+genomic_features <- genomic_features %>% 
+  mutate("ARG_gene" = if_else(locus_tag %in% joint_amr$locus_tag, "ARG", "-"))
+
+# Adding Campy loctags
+campy_loctags <- read_tsv("data/cje_cjj_loctags.tsv") %>% 
+  rename(locus_tag = locus_tag.cjj,
+         locus_tag.NCTC11168 = locus_tag.cje) %>% 
+  select(locus_tag, locus_tag.NCTC11168)
+
+genomic_features <- genomic_features %>% 
+  left_join(campy_loctags, by="locus_tag")
 
 # Adding pre-selected info to genomic features
 salm.preselection <- read_tsv("data/pre_selected_salmonella.txt") %>% 
@@ -321,7 +352,8 @@ campy.clone <-  subset(camp.preselection, clone=="Yes")$gene_name
 
 genomic_features <- genomic_features %>% 
     mutate("pre.selected" = if_else(gene_name %in% all_preselected, "Yes", "-"),
-           "campy.clone" = if_else(gene_name %in% campy.clone, "Yes", "-"))
+           "campy.clone" = if_else(gene_name %in% campy.clone, "Yes", "-")) %>% 
+  select(-locus_tag)
 
 
 # Define server logic required to draw a histogram

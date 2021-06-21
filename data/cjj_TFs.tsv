@@ -1,0 +1,14 @@
+ko_number	fasta_header	locus_tag	tf_name	tf_description	family	subtype	type
+K02019	lcl|CP000538.1_prot_EAQ72741.2_1435	CJJ81176_1499	modE	molybdate transport system regulatory protein	Other families	Helix-turn-helix	Prokaryotic type
+K03497	lcl|CP000538.1_prot_EAQ71995.1_106	CJJ81176_0136	parB, spo0J	ParB family transcriptional regulator, chromosome partitioning protein	Others	Other transcription factors	Prokaryotic type
+K03524	lcl|CP000538.1_prot_EAQ71944.1_104	CJJ81176_0134	birA	BirA family transcriptional regulator, biotin operon repressor / biotin---[acetyl-CoA-carboxylase] ligase [EC:6.3.4.15]	Other families	Helix-turn-helix	Prokaryotic type
+K03705	lcl|CP000538.1_prot_EAQ72426.1_722	CJJ81176_0773	hrcA	heat-inducible transcriptional repressor	Others	Other transcription factors	Prokaryotic type
+K03707	lcl|CP000538.1_prot_EAQ73055.1_429	CJJ81176_0466	tenA	thiaminase (transcriptional activator TenA) [EC:3.5.99.2]	Others	Other transcription factors	Prokaryotic type
+K03711	lcl|CP000538.1_prot_EAQ73017.1_392	CJJ81176_0423	fur, zur, furB	Fur family transcriptional regulator, ferric uptake regulator	Fur family	Helix-turn-helix	Prokaryotic type
+K03892	lcl|CP000538.1_prot_EAQ72932.1_1481	CJJ81176_1545	arsR	ArsR family transcriptional regulator, arsenate/arsenite/antimonite-responsive transcriptional repressor	ArsR family	Helix-turn-helix	Prokaryotic type
+K06204	lcl|CP000538.1_prot_EAQ73045.1_130	CJJ81176_0160	dksA	DnaK suppressor protein	Others	Other transcription factors	Prokaryotic type
+K09825	lcl|CP000538.1_prot_EAQ73204.1_313	CJJ81176_0344	perR	Fur family transcriptional regulator, peroxide stress response regulator	Fur family	Helix-turn-helix	Prokaryotic type
+K13640	lcl|CP000538.1_prot_EAQ72615.1_1185	CJJ81176_1244	hspR	MerR family transcriptional regulator, heat shock protein HspR	MerR family	Helix-turn-helix	Prokaryotic type
+K13821	lcl|CP000538.1_prot_EAQ72935.1_1431	CJJ81176_1495	putA	RHH-type transcriptional regulator, proline utilization regulon repressor / proline dehydrogenase / delta 1-pyrroline-5-carboxylate dehydrogenase [EC:1.5.5.2 1.2.1.88]	Other families	Ribbon-helix-helix	Prokaryotic type
+K20968	lcl|CP000538.1_prot_EAQ72095.1_1004	CJJ81176_1063	exsA	AraC family transcriptional regulator, exoenzyme S synthesis regulatory protein ExsA	AraC family	Helix-turn-helix	Prokaryotic type
+K21600	lcl|CP000538.1_prot_EAQ73454.1_494	CJJ81176_0538	csoR, ricR	CsoR family transcriptional regulator, copper-sensing transcriptional repressor	Others	Other transcription factors	Prokaryotic type
