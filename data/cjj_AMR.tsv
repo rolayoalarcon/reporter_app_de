@@ -1,9 +1,0 @@
-locus_tag	ko_number	gene_name	description	sub_function	abx_class	type
-CJJ81176_1315	K00662	aacC	None	N-Acetyltransferases	Aminoglycoside resistance genes	Gene variants
-CJJ81176_pTet0048	K18220	tetM	ribosomal protection tetracycline resistance protein 	Others	Tetracycline resistance genes	Gene variants
-CJJ81176_0486	K08217	mef	MFS transporter, DHA3 family, macrolide efflux protein 	Transporters	Macrolide resistance genes	Gene variants
-CJJ81176_0390	K03585	acrA	membrane fusion protein, multidrug efflux system 	Multidrug resistance, efflux pump MexAB-OprM [MD:M00718]	Multipdrug resistance modules	Gene sets
-CJJ81176_0389	K18138	acrB	multidrug efflux pump 	Multidrug resistance, efflux pump MexAB-OprM [MD:M00718]	Multipdrug resistance modules	Gene sets
-CJJ81176_0388	K18139	oprM	outer membrane protein, multidrug efflux system 	Multidrug resistance, efflux pump MexAB-OprM [MD:M00718]	Multipdrug resistance modules	Gene sets
-CJJ81176_0388	K18139	oprM	outer membrane protein, multidrug efflux system 	Multidrug resistance, efflux pump MexJK-OprM [MD:M00642]	Multipdrug resistance modules	Gene sets
-CJJ81176_0388	K18139	oprM	outer membrane protein, multidrug efflux system 	Multidrug resistance, efflux pump MexXY-OprM [MD:M00643]	Multipdrug resistance modules	Gene sets
