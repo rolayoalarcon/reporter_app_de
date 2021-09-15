@@ -3,7 +3,7 @@ library(plotly)
 
 
 bh_correction <- function(condition_to_correct, fdr, complete_dataset,
-                          fc){
+                          fc, dw_val){
   original_condition_df <- subset(complete_dataset, 
                                   condition==condition_to_correct)
   
@@ -12,14 +12,14 @@ bh_correction <- function(condition_to_correct, fdr, complete_dataset,
   
   orginal_corrected <- original_condition_df %>% 
     mutate("corrected_de" = case_when(padj <= fdr & log2FoldChange > fc ~ 1,
-                                      padj <= fdr & log2FoldChange < (-1*fc) ~ -1,
+                                      padj <= fdr & log2FoldChange < (-1*fc) ~ dw_val, # This should be -1 if we want downregulation
                                       TRUE ~ 0))
   
   return(orginal_corrected)
 }
 
 apply_correction <- function(complete_de_df, 
-                             fdr_chosen, fc_chosen){
+                             fdr_chosen, fc_chosen, de_consider){
   
   camp_de <- complete_de_df %>% 
     filter(endsWith(gene_name, "-Campylobacter"))
@@ -27,17 +27,26 @@ apply_correction <- function(complete_de_df,
   salm_de <- complete_de_df %>% 
     filter(endsWith(gene_name, "-Salmonella"))
   
+  if(de_consider == "up_dw"){
+    neg_val <- -1
+
+  }else if(de_consider == "o_up"){
+    neg_val <- 0
+  }
+  
   complete_corrected_salmonella <- bind_rows(lapply(unique(salm_de$condition), 
                                                     bh_correction,
                                                     complete_dataset=salm_de,
                                                     fdr=fdr_chosen,
-                                                    fc=fc_chosen))
+                                                    fc=fc_chosen, 
+                                                    dw_val=neg_val))
   
   complete_corrected_campylobacter <- bind_rows(lapply(unique(camp_de$condition), 
                                                        bh_correction,
                                                        complete_dataset=camp_de,
                                                        fdr=fdr_chosen,
-                                                       fc=fc_chosen))
+                                                       fc=fc_chosen,
+                                                       dw_val=neg_val))
   
   all_patterns <- bind_rows(complete_corrected_campylobacter, 
                             complete_corrected_salmonella)
@@ -57,7 +66,9 @@ gather_patterns <- function(de_dataframe, features_df, feature_of_interest,
   
   # Remove genes that have no DE in any condition
   rows_all_zero <- apply(de_patterns.wide, 1, function(x){all(x == 0)})
-  joint_de <- de_patterns.wide[!rows_all_zero,]
+  joint_de <- de_patterns.wide
+  joint_de$nonZ <- "nonZero"
+  joint_de[rows_all_zero,"nonZ"] <- "zero"
   
   joint_de <- joint_de %>% 
     rownames_to_column("gene_name") %>% 
@@ -71,8 +82,11 @@ gather_patterns <- function(de_dataframe, features_df, feature_of_interest,
 plot_frequency <- function(joint_de, min_genes, xcoord, ycoord,
                            selected_conditions){
   
+  
+  
   # Count pattern frequency
   pattern_count <- plyr::count(joint_de %>% 
+                                 filter(nonZ == "nonZero") %>% 
                                  select(-cje_loctag) %>% 
                                  distinct(.keep_all = T), vars = selected_conditions)
   
@@ -107,13 +121,14 @@ create_pattern_database <- function(joint_de, selected_conditions){
   
   # Count patterns
   pattern_count <- pattern_count <- plyr::count(joint_de %>% 
+                                                  #filter(nonZ == "nonZero") %>% 
                                                   select(-cje_loctag) %>% 
                                                   distinct(.keep_all = T), vars = selected_conditions)
   
   pattern.db <- pattern_count %>% 
     rename(n_genes=freq) %>% 
     arrange(desc(n_genes)) %>% 
-    mutate(pattern_id = paste0("Pattern ", 1:nrow(pattern_count)),
+    mutate(pattern_id = paste0("Pattern ", 0:(nrow(pattern_count)-1)),
            patid_ngenes = paste0(pattern_id, " (", n_genes, " genes)"),
            
            pattern_id = factor(pattern_id, levels = pattern_id),
@@ -127,6 +142,11 @@ create_pattern_database <- function(joint_de, selected_conditions){
 
 
 plot_patterns <- function(pat.db, min_genes, selected_conditions){
+  
+  # Remove the all 0 pattern
+  conditions.df <- pat.db %>% select(selected_conditions)
+  zero_rows <- apply(conditions.df, 1, function(x){all(x==0)})
+  pat.db <- pat.db[!zero_rows, ]
   
   selected.patterns <- pat.db %>% 
     filter(n_genes >= min_genes) %>% 
@@ -171,7 +191,9 @@ plot_gene_wrap <- function(complete_data, min_genes, color_by_this, selected_con
   
   plot_data <- complete_data %>% 
     filter(n_genes >= min_genes) %>% 
+    filter(nonZ == "nonZero") %>% 
     select(gene_name, regulator_general, pre.selected, clone, patid_ngenes, condition, log2FC.shrink) %>% 
+    distinct() %>% 
     pivot_wider(names_from = condition, values_from=log2FC.shrink) %>% 
     mutate(Ctrl = 0,
            organism = sapply(gene_name, function(x){tail(strsplit(x, "-")[[1]], n=1)})) %>% 
@@ -324,15 +346,81 @@ focused_profile_de <- function(pat.db, which_pattern, selected_conditions){
 pattern_table <- function(complete_dataframe, which_pattern){
   complete_dataframe %>% 
   select(gene_name, locus_tag, cje_loctag, symbol, name, 
-         regulator_general, pre.selected, clone, bbh, pattern_id) %>% 
+         regulator_general, pre.selected, clone, bbh, pgfam_id, pattern_id) %>% 
     filter(pattern_id == which_pattern) %>% 
     distinct()
+}
+
+homologs_table <- function(complete_dataframe, which_homologs){
+  if(which_homologs == "pgfam"){
+    campy_pfam <- complete_dataframe %>% 
+      select(locus_tag, pgfam_id, pgfam_genes, pattern_id) %>% 
+      filter(!is.na(pgfam_id)) %>% 
+      distinct() %>% 
+      mutate(organism=if_else(startsWith(locus_tag, "CJJ"), "Campylobacter", "Salmonella")) %>% 
+      filter(organism == "Campylobacter") %>% 
+      select(-c(organism, pgfam_genes)) %>% 
+      rename(cjejuni_pattern = pattern_id,
+             cjejuni_loctag = locus_tag)
+    
+    salm_pfam <- complete_dataframe %>% 
+      select(locus_tag, pgfam_id, pgfam_genes, pattern_id) %>% 
+      filter(!is.na(pgfam_id)) %>% 
+      distinct() %>% 
+      mutate(organism=if_else(startsWith(locus_tag, "CJJ"), "Campylobacter", "Salmonella")) %>% 
+      filter(organism == "Salmonella") %>% 
+      select(-c(organism, pgfam_genes)) %>% 
+      rename(salmonella_pattern = pattern_id,
+             salmonella_loctag = locus_tag)
+    
+    joining_homologs <- campy_pfam %>% 
+      left_join(salm_pfam, by="pgfam_id") %>% 
+      filter(!is.na(salmonella_loctag)) %>% 
+      filter(cjejuni_pattern == salmonella_pattern) %>% 
+      filter(cjejuni_pattern != "Pattern 0") %>% 
+      arrange(cjejuni_pattern) %>% 
+      select(cjejuni_loctag, salmonella_loctag, pgfam_id,
+             cjejuni_pattern, salmonella_pattern)
+    
+    return(joining_homologs)
+    
+  }else if(which_homologs == "bbh"){
+    
+    bbh_info <- complete_dataframe %>% 
+      filter(!is.na(bbh)) %>% 
+      select(locus_tag, bbh, pattern_id) %>% 
+      distinct() %>% 
+      mutate(organism=if_else(startsWith(locus_tag, "CJJ"), "Campylobacter", "Salmonella")) %>% 
+      filter(organism == "Campylobacter") %>% 
+      rename(cjejuni_loctag=locus_tag,
+             salmonella_loctag=bbh,
+             cjejuni_pattern=pattern_id) %>% 
+      select(-organism)
+    
+    salm_info <- complete_dataframe %>% 
+      filter(!is.na(bbh)) %>% 
+      select(locus_tag, pattern_id) %>% 
+      distinct() %>% 
+      mutate(organism=if_else(startsWith(locus_tag, "CJJ"), "Campylobacter", "Salmonella")) %>% 
+      filter(organism == "Salmonella") %>% 
+      rename(salmonella_loctag=locus_tag,
+             salmonella_pattern=pattern_id) %>% 
+      select(-organism)
+    
+    joining_homologs <- bbh_info %>% 
+      left_join(salm_info, by="salmonella_loctag") %>% 
+      filter(cjejuni_pattern == salmonella_pattern) %>% 
+      filter(cjejuni_pattern != "Pattern 0") %>% 
+      arrange(cjejuni_pattern)
+    
+    return(joining_homologs)
+  }
 }
 
 all_genes_table <- function(complete_dataframe){
   complete_dataframe %>% 
     select(gene_name, locus_tag, cje_loctag, symbol, name, 
-           regulator_general, pre.selected, clone, bbh, pattern_id, n_genes, pattern_str) %>% 
+           regulator_general, pre.selected, clone, bbh, pgfam_id, pgfam_genes, pattern_id, n_genes, pattern_str) %>% 
     distinct()
 }
   

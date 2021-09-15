@@ -14,7 +14,7 @@ library(readxl)
 source("scritps/helpers.R")
 library(tidyverse)
 
-# Define UI for application that draws a histogram
+ # Define UI for application that draws a histogram
 ui <- fluidPage(
     tabsetPanel(
         tabPanel(title = "CDS",
@@ -23,6 +23,10 @@ ui <- fluidPage(
                        textInput(inputId = "selcond.cds",
                                  label = "Conditions to evaluate",
                                  value = "As,Bs,Hyp,Li,Nd,Ns,Oss,Oxs,Sp,Tm,Vic"),
+                       selectInput(inputId = "de.direction.cds",
+                                   label = "Group genes by:",
+                                   choices = list("Upregulation and Downregulation"="up_dw",
+                                                  "Only Upregulation" = "o_up")),
                          numericInput(inputId = "fdr.cds",
                                       label="False Discovery Rate",
                                       value=0.05,
@@ -137,13 +141,25 @@ ui <- fluidPage(
                                br(),
                                br(),
                                br(),
-                               br(),
-                               br(),
+                               br()
+                              )
+                 ), #end of focus
+                 "Homolog Genes with the same pattern",
+                 sidebarLayout(
+                     sidebarPanel(
+                         selectInput(inputId = "homolog_selection",
+                                     label = "Homolog type:",
+                                     choices = list("Best Bidirectional Hit"="bbh",
+                                                    "PGFam homologs" = "pgfam"))
+        
+                     ),
+                     mainPanel(DTOutput("homolog_patterns"),
                                br(),
                                br(),
                                br(),
                                br())
-                 ), #end of focus
+                 ),
+                 
                  "All Genes",
                  DTOutput("all_cds_table")
                  ), # End of CDS tab
@@ -153,6 +169,10 @@ ui <- fluidPage(
                        textInput(inputId = "selcond.srna",
                                  label = "Conditions to evaluate",
                                  value = "As,Bs,Hyp,Li,Nd,Ns,Oss,Oxs,Sp,Tm,Vic"),
+                       selectInput(inputId = "de.direction.srna",
+                                   label = "Group genes by:",
+                                   choices = list("Upregulation and Downregulation"="up_dw",
+                                                  "Only Upregulation" = "o_up")),
                          numericInput(inputId = "fdr.srna",
                                       label="False Discovery Rate",
                                       value=0.05,
@@ -293,12 +313,14 @@ server <- function(input, output) {
     pattern_parameters_cds <- reactiveValues(fdr_min = 0.05,
                                              fc_min = 0,
                                              min_genes_in_pattern = 15,
-                                             conditions = c("As","Bs", "Hyp", "Li",  "Nd",  "Ns",  "Oss", "Oxs", "Sp",  "Tm",  "Vic"))
+                                             conditions = c("As","Bs", "Hyp", "Li",  "Nd",  "Ns",  "Oss", "Oxs", "Sp",  "Tm",  "Vic"),
+                                             gene_groupby = "up_dw")
     
     pattern_parameters_srna <- reactiveValues(fdr_min = 0.05,
                                               fc_min = 0,
                                              min_genes_in_pattern = 5,
-                                             conditions = c("As","Bs", "Hyp", "Li",  "Nd",  "Ns",  "Oss", "Oxs", "Sp",  "Tm",  "Vic"))
+                                             conditions = c("As","Bs", "Hyp", "Li",  "Nd",  "Ns",  "Oss", "Oxs", "Sp",  "Tm",  "Vic"),
+                                             gene_groupby = "up_dw")
     
     # Initialize parameters
     ## CDS
@@ -307,6 +329,7 @@ server <- function(input, output) {
         pattern_parameters_cds$fc_min <- input$fc.cds
         pattern_parameters_cds$min_genes_in_pattern <-  input$min_genes.cds
         pattern_parameters_cds$conditions <- strsplit(input$selcond.cds, ",")[[1]]
+        pattern_parameters_cds$gene_groupby <- input$de.direction.cds
     })
     
     ## sRNA
@@ -315,6 +338,7 @@ server <- function(input, output) {
         pattern_parameters_srna$fc_min <- input$fc.srna
         pattern_parameters_srna$min_genes_in_pattern <-  input$min_genes.srna
         pattern_parameters_srna$conditions <- strsplit(input$selcond.srna, ",")[[1]]
+        pattern_parameters_srna$gene_groupby <- input$de.direction.srna
     })
     
     # Adjust FDR-rate
@@ -323,7 +347,8 @@ server <- function(input, output) {
         apply_correction(
             complete_de_df=combined_de, 
             fdr_chosen=pattern_parameters_cds$fdr_min,
-            fc_chosen=pattern_parameters_cds$fc_min 
+            fc_chosen=pattern_parameters_cds$fc_min,
+            de_consider=pattern_parameters_cds$gene_groupby
         )
     })
     
@@ -331,7 +356,8 @@ server <- function(input, output) {
         apply_correction(
             complete_de_df=combined_de, 
             fdr_chosen=pattern_parameters_srna$fdr_min,
-            fc_chosen=pattern_parameters_srna$fc_min 
+            fc_chosen=pattern_parameters_srna$fc_min,
+            de_consider=pattern_parameters_srna$gene_groupby
         )
     })
     
@@ -524,6 +550,13 @@ server <- function(input, output) {
     output$cluster_members_srna <- renderDT({
         pattern_table(complete_dataframe = collective_df.srna(), 
                       which_pattern = focus_parameters_srna$c_focus)
+    })
+    
+    # Homolog table
+    
+    output$homolog_patterns <- renderDT({
+        homologs_table(complete_dataframe = collective_df.cds(),
+                       which_homologs = input$homolog_selection)
     })
     
     

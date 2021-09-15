@@ -12,11 +12,11 @@ library(tidyverse)
 # Read in DE results
 
 ```{r cars}
-camp_de <- read_tsv("../../cjejuni_pathogenex/data/counts/de_results.tsv") %>% 
+camp_de <- read_tsv("../../../cjejuni_pathogenex/data/counts/de_results.tsv") %>% 
   rename(locus_tag = gene_name) %>% 
   mutate(gene_name = paste0(locus_tag, "-Campylobacter"))
 
-salm_de <- read_tsv("../../salmonella_pathogenex/data/counts/de_results.tsv") %>% 
+salm_de <- read_tsv("../../../salmonella_pathogenex/data/counts/de_results.tsv") %>% 
   rename(locus_tag = gene_name) %>% 
   mutate(gene_name = paste0(locus_tag, "-Salmonella"))
 
@@ -31,12 +31,12 @@ combined_de %>%
 ## Genomic Features
 
 ```{r}
-salm_features <- read_tsv("../../salmonella_pathogenex/data/genome_info/GCF_000210855.2_ASM21085v2/merged_features.tsv") %>% 
+salm_features <- read_tsv("../../../salmonella_pathogenex/data/genome_info/GCF_000210855.2_ASM21085v2/merged_features.tsv") %>% 
   mutate(organism="Salmonella",
          gene_name=paste0(locus_tag, "-Salmonella")) %>% 
   select(-GeneID)
 
-camp_features <- read_tsv("../../cjejuni_pathogenex/data/genome_info/GCF_000015525.1_ASM1552v1/merged_features.tsv") %>% 
+camp_features <- read_tsv("../../../cjejuni_pathogenex/data/genome_info/GCF_000015525.1_ASM1552v1/merged_features.tsv") %>% 
   mutate(organism="Campylobacter",
          gene_name=paste0(locus_tag, "-Campylobacter")) %>% 
   select(-GeneID)
@@ -48,9 +48,9 @@ genomic_features <- bind_rows(salm_features, camp_features) %>%
 # Assinging TF 
 
 ```{r}
-campy_tf <- read_tsv("../../cjejuni_pathogenex/data/genome_info/GCF_000015525.1_ASM1552v1/transcription_factors_parsed.tsv") %>% 
+campy_tf <- read_tsv("../../../cjejuni_pathogenex/data/genome_info/GCF_000015525.1_ASM1552v1/transcription_factors_parsed.tsv") %>% 
   select(locus_tag, regulator_specific, regulator_general)
-salm_tf <- read_tsv("../../salmonella_pathogenex/data/genome_info/GCF_000210855.2_ASM21085v2/transcription_factors_parsed.tsv") %>% 
+salm_tf <- read_tsv("../../../salmonella_pathogenex/data/genome_info/GCF_000210855.2_ASM21085v2/transcription_factors_parsed.tsv") %>% 
   select(locus_tag, regulator_specific, regulator_general)
 transcription_factors <- bind_rows(campy_tf, salm_tf)
 ```
@@ -66,7 +66,7 @@ genomic_features <- genomic_features %>%
 
 # Add the Cje homologs
 ```{r}
-cje_cjj_bbh <- read_tsv("../../rbh_blastp/rbh_dataframes/cpath_vs_cnfcore.tsv") %>% 
+cje_cjj_bbh <- read_tsv("../../../rbh_blastp/rbh_dataframes/cpath_vs_cnfcore.tsv") %>% 
   select(query_x, subject_x) %>% 
   rename(locus_tag=query_x,
          cje_loctag=subject_x)
@@ -109,9 +109,12 @@ genomic_features <- genomic_features %>%
   left_join(campy_preselection, by="locus_tag")
 ```
 
+
 ```{r}
-cjj_sey <- read_tsv("../../rbh_blastp/rbh_dataframes/cpath_vs_spath.tsv")
-cjj_ref <- cjj_sey %>% 
+cjj_sey <- read_tsv("../../../rbh_blastp/rbh_dataframes/cpath_vs_spath.tsv") %>% 
+  filter(`E-value` <= 1e-10)
+
+cjj_ref <- cjj_sey  %>% 
   select(query_x, subject_x) %>% 
   rename(locus_tag=query_x,
          bbh=subject_x)
@@ -128,10 +131,52 @@ genomic_features <- genomic_features %>%
   left_join(org_bbh, by="locus_tag")
 ```
 
+```{r}
+genomic_features
+```
+## PGFam 
 
+```{r}
+pgfam_df <- read_tsv("../../../rbh_blastp/patric_dataframes/pgfam_concatenation.tsv.gz")
+pgfam_df
+```
+Some pgfam ids are assigned to more than one gene in a genome. Therefore, makes sense to make a list of genes that are in the same pgfam family.
+```{r}
+pgfam_groups <- function(pgid, df){
+  iso_homologs <- df %>% 
+    filter(pgfam_id == pgid) %>% 
+    select(locus_tag) %>% 
+    unlist()
+  
+  homo_string <- paste(iso_homologs, collapse = ", ")
+  
+  d.out <- data.frame(pgfam_id = pgid,
+                      pgfam_genes = homo_string)
+  return(d.out)
+}
+
+pgfam_genes.df <- bind_rows(lapply(unique(pgfam_df$pgfam_id), pgfam_groups, pgfam_df))
+```
+
+```{r}
+pgfam_df <- pgfam_df %>% 
+  left_join(pgfam_genes.df, by="pgfam_id")
+```
 
 
 
 ```{r}
+genomic_features <- genomic_features %>% 
+  left_join(pgfam_df, by="locus_tag")
+
+```
+
+```{r}
+genomic_features
+```
+
+```{r}
 write_tsv(genomic_features, "../data/genomic_features.tsv.gz")
 ```
+
+
