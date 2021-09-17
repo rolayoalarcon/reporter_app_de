@@ -209,7 +209,7 @@ plot_gene_wrap <- function(complete_data, min_genes, color_by_this, selected_con
                 color=alpha("grey", 0.5)) +
       geom_line(data=camp.data, aes(x=condition, y=log2FC.shrink, group=gene_name),
                 color=alpha("steelblue", 0.5)) +
-      facet_wrap(~ patid_ngenes, scales="free") +
+      facet_wrap(~ patid_ngenes, scales="free_y") +
       theme_minimal() +
       theme(legend.position = "none",
             axis.text.x = element_text(angle = 90)) +
@@ -228,7 +228,7 @@ plot_gene_wrap <- function(complete_data, min_genes, color_by_this, selected_con
                 color=alpha("grey", 0.5)) +
       geom_line(data=salm.pre, aes(x=condition, y=log2FC.shrink, group=gene_name),
                 color=alpha("red", 0.5)) +
-      facet_wrap(~ patid_ngenes, scales="free") +
+      facet_wrap(~ patid_ngenes, scales="free_y") +
       theme_minimal() +
       theme(legend.position = "none",
             axis.text.x = element_text(angle = 90)) +
@@ -250,7 +250,7 @@ plot_gene_wrap <- function(complete_data, min_genes, color_by_this, selected_con
                 color=alpha("steelblue", 1)) +
       geom_line(data=camp.clo, aes(x=condition, y=log2FC.shrink, group=gene_name),
                 color=alpha("red", 1)) +
-      facet_wrap(~ patid_ngenes, scales="free") +
+      facet_wrap(~ patid_ngenes, scales="free_y") +
       theme_minimal() +
       theme(legend.position = "none",
             axis.text.x = element_text(angle = 90)) +
@@ -271,7 +271,7 @@ plot_gene_wrap <- function(complete_data, min_genes, color_by_this, selected_con
                 color=alpha("#d95f02", 1)) +
       geom_line(data=camp.tfs, aes(x=condition, y=log2FC.shrink, group=gene_name),
                 color=alpha("#7570b3", 1)) +
-      facet_wrap(~ patid_ngenes, scales="free") +
+      facet_wrap(~ patid_ngenes, scales="free_y") +
       theme_minimal() +
       theme(legend.position = "none",
             axis.text.x = element_text(angle = 90)) +
